@@ -171,7 +171,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22.21.x'
+          # sqlite3 5.1.7 has a Windows prebuild for Node 20; Node 22
+          # falls back to node-gyp and cannot detect the hosted VS 18 toolchain.
+          node-version: '20.19.x'
 
       - name: Setup Python
         uses: actions/setup-python@v6
