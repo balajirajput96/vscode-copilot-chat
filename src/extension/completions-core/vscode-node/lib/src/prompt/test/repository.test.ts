@@ -4,17 +4,48 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { execFile } from 'child_process';
 import path from 'path';
+import { promisify } from 'util';
 import { createLibTestingContext } from '../../test/context';
 import { makeFsUri } from '../../util/uri';
 import { extractRepoInfo } from '../repository';
 import { IInstantiationService } from '../../../../../../../util/vs/platform/instantiation/common/instantiation';
 
+const execFileAsync = promisify(execFile);
+
+async function getExpectedGitHubRepo(): Promise<{ org: string; repo: string }> {
+	const repository = process.env.GITHUB_REPOSITORY;
+	if (repository) {
+		const [org, repo] = repository.split('/');
+		if (org && repo) {
+			return { org, repo };
+		}
+	}
+
+	try {
+		const repoRoot = path.resolve(__dirname, '../../../../../../../../');
+		const { stdout } = await execFileAsync('git', ['config', '--get', 'remote.origin.url'], {
+			cwd: repoRoot,
+		});
+		const match = stdout.trim().match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+		if (match) {
+			return { org: match[1], repo: match[2] };
+		}
+	} catch {
+		// Use the upstream repository as the fallback for source checkouts without a remote.
+	}
+
+	return { org: 'microsoft', repo: 'vscode-copilot-chat' };
+}
+
 suite('Extract repo info tests', function () {
-	const baseFolder = { uri: makeFsUri(path.resolve(__dirname, '../../../../../../../../')) };
+	const repoRoot = path.resolve(__dirname, '../../../../../../../../');
+	const baseFolder = { uri: makeFsUri(repoRoot) };
 
 	test('Extract repo info', async function () {
 		const accessor = createLibTestingContext().createTestingAccessor();
+		const expectedRepo = await getExpectedGitHubRepo();
 		const info = await extractRepoInfo(accessor, baseFolder.uri);
 
 		assert.ok(info);
@@ -29,17 +60,21 @@ suite('Extract repo info tests', function () {
 		assert.ok(repoId);
 		assert.deepStrictEqual(
 			{ org: repoId.org, repo: repoId.repo, type: repoId.type },
-			{ org: 'microsoft', repo: 'vscode-copilot-chat', type: 'github' }
+			{ ...expectedRepo, type: 'github' }
 		);
 		assert.ok(
 			[
-				'git@github.com:microsoft/vscode-copilot-chat',
-				'https://github.com/microsoft/vscode-copilot-chat',
-				'https://github.com/microsoft/vscode-copilot-chat.git',
+				`git@github.com:${expectedRepo.org}/${expectedRepo.repo}`,
+				`https://github.com/${expectedRepo.org}/${expectedRepo.repo}`,
+				`https://github.com/${expectedRepo.org}/${expectedRepo.repo}.git`,
 			].includes(url),
 			`url is ${url}`
 		);
-		assert.ok(pathname.startsWith('/github/vscode-copilot-chat') || pathname.startsWith('/microsoft/vscode-copilot-chat'));
+		assert.ok(
+			pathname.startsWith(`/github/${expectedRepo.repo}`) ||
+			pathname.startsWith(`/${expectedRepo.org}/${expectedRepo.repo}`),
+			`pathname is ${pathname}`
+		);
 
 		assert.deepStrictEqual(await extractRepoInfo(accessor, 'file:///tmp/does/not/exist/.git/config'), undefined);
 	});
@@ -49,6 +84,7 @@ suite('Extract repo info tests', function () {
 		assert.ok(cellUri.startsWith('vscode-notebook-cell:'));
 		const accessor = createLibTestingContext().createTestingAccessor();
 		const instantiationService = accessor.get(IInstantiationService);
+		const expectedRepo = await getExpectedGitHubRepo();
 		const info = await extractRepoInfo(accessor, cellUri);
 
 		assert.ok(info);
@@ -63,17 +99,21 @@ suite('Extract repo info tests', function () {
 		assert.ok(repoId);
 		assert.deepStrictEqual(
 			{ org: repoId.org, repo: repoId.repo, type: repoId.type },
-			{ org: 'microsoft', repo: 'vscode-copilot-chat', type: 'github' }
+			{ ...expectedRepo, type: 'github' }
 		);
 		assert.ok(
 			[
-				'git@github.com:microsoft/vscode-copilot-chat',
-				'https://github.com/microsoft/vscode-copilot-chat',
-				'https://github.com/microsoft/vscode-copilot-chat.git',
+				`git@github.com:${expectedRepo.org}/${expectedRepo.repo}`,
+				`https://github.com/${expectedRepo.org}/${expectedRepo.repo}`,
+				`https://github.com/${expectedRepo.org}/${expectedRepo.repo}.git`,
 			].includes(url),
 			`url is ${url}`
 		);
-		assert.ok(pathname.startsWith('/github/vscode-copilot-chat') || pathname.startsWith('/microsoft/vscode-copilot-chat'));
+		assert.ok(
+			pathname.startsWith(`/github/${expectedRepo.repo}`) ||
+			pathname.startsWith(`/${expectedRepo.org}/${expectedRepo.repo}`),
+			`pathname is ${pathname}`
+		);
 
 		assert.deepStrictEqual(await instantiationService.invokeFunction(extractRepoInfo, 'file:///tmp/does/not/exist/.git/config'), undefined);
 	});
