@@ -37,7 +37,14 @@ jobs:
       - name: Extract chat-lib
         shell: bash
         run: |
-          npm ci
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # The root workspace includes sqlite3, which has no usable
+            # prebuilt Node 22 binary on this runner. Extraction only needs
+            # the TypeScript tooling, so skip lifecycle scripts on Windows.
+            npm ci --ignore-scripts
+          else
+            npm ci
+          fi
           npm run extract-chat-lib
           rm -rf node_modules
 
